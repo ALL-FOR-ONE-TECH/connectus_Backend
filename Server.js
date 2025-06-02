@@ -3,10 +3,12 @@ const session = require('express-session');
 const mongoose = require('mongoose');
 const MongoStore = require('connect-mongo');
 const cors = require('cors');
+const path = require('path');
 require('dotenv').config();
 const connectDB = require('./config/db');
 const Authadmin = require('./Routes/Authadmin');
-const NormalAdmin = require('./Routes/Admin');
+const adminservice = require('./Routes/AdminService');
+const adminbusiness = require('./Routes/AdminBusiness');
 
 connectDB();
 const app = express();
@@ -14,10 +16,13 @@ const app = express();
 app.use(express.json());
 
 app.use(cors({
-  origin: process.env.CORS_ORIGIN || 'http://localhost:3000',
+  origin: 'http://localhost:3000',
   methods: ['GET', 'POST', 'PUT', 'DELETE'],
   credentials: true
 }));
+
+// Static folder for uploaded files
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 app.use(session({
   secret: process.env.SESSION_SECRET,
@@ -36,11 +41,9 @@ app.use(session({
 }));
 
 // Import routes
-
-// Correct ✅
 app.use('/connectus-api/adminauth', Authadmin);
-app.use('/connectus-api/nomi-admin', NormalAdmin);
-
+app.use('/connectus-api/adminservice', adminservice);
+app.use('/connectus-api/adminbusiness', adminbusiness);
 
 app.get('/', (req, res) => {
   res.send('Server is running.............');
