@@ -8,6 +8,8 @@ const speakeasy = require('speakeasy');
 
 const user = require('../models/UserRole');
 const Business = require('../models/businessInfo');
+const ActionLog = require('../models/ActionLog');
+
 
 const router = express.Router();
 
@@ -102,6 +104,17 @@ router.post('/businesses', ensureadmin, upload.array('images'), async (req, res)
       image: imagePaths,
       serviceTypes,
     });
+
+    await ActionLog.create({
+    actionType: 'CREATE',
+    collectionName: 'Business',
+    documentId: business._id,
+    userId: req.session.user.id,
+    userName: req.session.user.name,
+    changes: business.toObject(),
+    });
+
+
     res.status(201).json(business);
   } catch (err) {
     res.status(400).json({ error: err.message });
@@ -130,6 +143,17 @@ router.put('/businesses/:id', ensureadmin, upload.array('images'), async (req, r
     }
 
     const updated = await Business.findByIdAndUpdate(req.params.id, updateData, { new: true });
+
+    await ActionLog.create({
+    actionType: 'UPDATE',
+    collectionName: 'Business',
+    documentId: updated._id,
+    userId: req.session.user.id,
+    userName: req.session.user.name,
+    changes: updated.toObject(),
+    });
+
+
     res.json(updated);
   } catch (err) {
     res.status(400).json({ error: err.message });
@@ -143,6 +167,16 @@ router.delete('/businesses/:id', ensureadmin, verifyTotp, async (req, res) => {
     if (!business) {
       return res.status(404).json({ message: 'Business not found' });
     }
+
+     // Log before deleting
+    await ActionLog.create({
+      actionType: 'DELETE',
+      collectionName: 'Business',
+      documentId: business._id,
+      userId: req.session.user.id,
+      userName: req.session.user.name,
+      changes: business.toObject(),
+    });
 
     // Delete image files from filesystem
     if (business.image && Array.isArray(business.image)) {
