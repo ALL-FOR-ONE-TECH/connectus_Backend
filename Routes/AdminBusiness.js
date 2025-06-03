@@ -10,7 +10,6 @@ const user = require('../models/UserRole');
 const Business = require('../models/businessInfo');
 const ActionLog = require('../models/ActionLog');
 
-
 const router = express.Router();
 
 // File upload configuration
@@ -61,9 +60,28 @@ async function verifyTotp(req, res, next) {
   }
 }
 
+// -------------------- location fetch by lon & lat from maplink url --------------------
+function extractLatLonFromGoogleMapsPlaceLink(url) {
+  let match = url.match(/@([-.\d]+),([-.\d]+)/);
+  if (match) {
+    const lat = parseFloat(match[1]);
+    const lon = parseFloat(match[2]);
+    return { lat, lon };
+  }
+
+  match = url.match(/[?&](?:ll|q)=([-.\d]+),([-.\d]+)/);
+  if (match) {
+    const lat = parseFloat(match[1]);
+    const lon = parseFloat(match[2]);
+    return { lat, lon };
+  }
+
+  return null;
+};
+
 // -------------------- Businesses --------------------
 
-// Get all businesses (ADD THIS MISSING ROUTE)
+// Get all businesses
 router.get('/businesses', ensureadmin, async (req, res) => {
   try {
     const businesses = await Business.find().populate('serviceTypes');
@@ -73,7 +91,7 @@ router.get('/businesses', ensureadmin, async (req, res) => {
   }
 });
 
-// Get single business by ID (OPTIONAL - good to have)
+// Get single business by ID
 router.get('/businesses/:id', ensureadmin, async (req, res) => {
   try {
     const business = await Business.findById(req.params.id).populate('serviceTypes');
@@ -90,6 +108,7 @@ router.get('/businesses/:id', ensureadmin, async (req, res) => {
 router.post('/businesses', ensureadmin, upload.array('images'), async (req, res) => {
   try {
     const imagePaths = req.files.map(f => `/uploads/${f.filename}`);
+
     let serviceTypes = req.body.serviceTypes;
     if (typeof serviceTypes === 'string') {
       try {
@@ -99,21 +118,32 @@ router.post('/businesses', ensureadmin, upload.array('images'), async (req, res)
       }
     }
 
+    // 🧭 Extract lat/lon from Google Maps link if provided
+    let lat = null, lon = null;
+    if (req.body.mapUrl) {  // <<<< UPDATED from 'mapLink' to 'mapUrl'
+      const coords = extractLatLonFromGoogleMapsPlaceLink(req.body.mapUrl);  // <<<< UPDATED
+      if (coords) {
+        lat = coords.lat;
+        lon = coords.lon;
+      }
+    }
+
     const business = await Business.create({
       ...req.body,
       image: imagePaths,
       serviceTypes,
+      latitude: lat,    // <<<< ADDED - save latitude
+      longitude: lon,   // <<<< ADDED - save longitude
     });
 
     await ActionLog.create({
-    actionType: 'CREATE',
-    collectionName: 'Business',
-    documentId: business._id,
-    userId: req.session.user.id,
-    userName: req.session.user.name,
-    changes: business.toObject(),
+      actionType: 'CREATE',
+      collectionName: 'Business',
+      documentId: business._id,
+      userId: req.session.user.id,
+      userName: req.session.user.name,
+      changes: business.toObject(),
     });
-
 
     res.status(201).json(business);
   } catch (err) {
@@ -125,6 +155,7 @@ router.post('/businesses', ensureadmin, upload.array('images'), async (req, res)
 router.put('/businesses/:id', ensureadmin, upload.array('images'), async (req, res) => {
   try {
     const imagePaths = req.files.map(f => `/uploads/${f.filename}`);
+
     let serviceTypes = req.body.serviceTypes;
     if (typeof serviceTypes === 'string') {
       try {
@@ -138,21 +169,30 @@ router.put('/businesses/:id', ensureadmin, upload.array('images'), async (req, r
       ...req.body,
       serviceTypes,
     };
+
     if (imagePaths.length > 0) {
       updateData.image = imagePaths;
+    }
+
+    // 🧭 Extract lat/lon from Google Maps link if provided (PUT route)
+    if (req.body.mapUrl) {  // <<<< UPDATED from 'mapLink' to 'mapUrl'
+      const coords = extractLatLonFromGoogleMapsPlaceLink(req.body.mapUrl);  // <<<< UPDATED
+      if (coords) {
+        updateData.latitude = coords.lat;   // <<<< ADDED
+        updateData.longitude = coords.lon;  // <<<< ADDED
+      }
     }
 
     const updated = await Business.findByIdAndUpdate(req.params.id, updateData, { new: true });
 
     await ActionLog.create({
-    actionType: 'UPDATE',
-    collectionName: 'Business',
-    documentId: updated._id,
-    userId: req.session.user.id,
-    userName: req.session.user.name,
-    changes: updated.toObject(),
+      actionType: 'UPDATE',
+      collectionName: 'Business',
+      documentId: updated._id,
+      userId: req.session.user.id,
+      userName: req.session.user.name,
+      changes: updated.toObject(),
     });
-
 
     res.json(updated);
   } catch (err) {
@@ -168,7 +208,7 @@ router.delete('/businesses/:id', ensureadmin, verifyTotp, async (req, res) => {
       return res.status(404).json({ message: 'Business not found' });
     }
 
-     // Log before deleting
+    // Log before deleting
     await ActionLog.create({
       actionType: 'DELETE',
       collectionName: 'Business',
@@ -183,18 +223,25 @@ router.delete('/businesses/:id', ensureadmin, verifyTotp, async (req, res) => {
       business.image.forEach((imgPath) => {
         // Construct absolute path on server
         const filePath = path.join(__dirname, '..', imgPath);
-        // Check if file exists and delete it
+        // Check if file exists and delete it safely
         if (fs.existsSync(filePath)) {
-          fs.unlinkSync(filePath);
-          console.log(`Deleted file: ${filePath}`);
+          try {                               // <<<< ADDED try-catch
+            fs.unlinkSync(filePath);
+            console.log(`Deleted file: ${filePath}`);
+          } catch (e) {
+            console.error(`Failed to delete file ${filePath}:`, e);
+          }
         }
       });
     } else if (typeof business.image === 'string') {
-      // If image is a single string path (optional check)
       const filePath = path.join(__dirname, '..', business.image);
       if (fs.existsSync(filePath)) {
-        fs.unlinkSync(filePath);
-        console.log(`Deleted file: ${filePath}`);
+        try {                               // <<<< ADDED try-catch
+          fs.unlinkSync(filePath);
+          console.log(`Deleted file: ${filePath}`);
+        } catch (e) {
+          console.error(`Failed to delete file ${filePath}:`, e);
+        }
       }
     }
 

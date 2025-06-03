@@ -5,7 +5,7 @@ const speakeasy = require('speakeasy');
 const axios = require('axios');
 
 const User = require('../models/UserRole');
-const ServiceType = require('../models/ServiceType');
+const ServiceType = require('../models/serviceType');
 
 const router = express.Router();
 
