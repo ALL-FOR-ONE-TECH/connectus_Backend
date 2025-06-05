@@ -17,16 +17,26 @@ router.get('/Get-service-types', async (req, res) => {
 
 //---------------------fetching all businesses-------------------
 // Get businesses for a given service type
+
 router.get('/businesses-by-service/:serviceId', async (req, res) => {
   try {
     const businesses = await Business.find({ serviceTypes: req.params.serviceId })
-      .populate('serviceTypes');
-    res.json(businesses);
+      .populate('serviceTypes')
+      .lean(); // Convert Mongoose documents to plain JS objects
+
+    // Attach imageUrl property for each business
+    const enhanced = businesses.map(biz => ({
+      ...biz,
+      imageUrl: biz.image?.[0] || ''
+    }));
+
+    res.json(enhanced);
   } catch (err) {
     console.error('Error fetching businesses:', err);
     res.status(500).json({ error: 'Internal Server Error' });
   }
 });
+
 
 
 // --------------------------nearby services--------------------------
