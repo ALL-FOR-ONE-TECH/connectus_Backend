@@ -10,6 +10,7 @@ const Authadmin = require('./Routes/Authadmin');
 const adminservice = require('./Routes/AdminService');
 const adminbusiness = require('./Routes/AdminBusiness');
 const location = require('./Routes/location');
+const UserProfile = require('./Routes/UserProfile'); 
 const HomeDisplay = require('./Routes/HomeDisplay');
 
 connectDB();
@@ -48,6 +49,7 @@ app.use('/connectus-api/adminservice', adminservice);
 app.use('/connectus-api/adminbusiness', adminbusiness);
 app.use('/connectus-api/location', location);
 app.use('/connectus-api/homeDisplay', HomeDisplay);
+app.use('/connectus-api/userprofile', UserProfile);
 
 app.get('/', (req, res) => {
   res.send('Server is running.............');
