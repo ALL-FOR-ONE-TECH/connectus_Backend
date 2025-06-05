@@ -9,6 +9,8 @@ const connectDB = require('./config/db');
 const Authadmin = require('./Routes/Authadmin');
 const adminservice = require('./Routes/AdminService');
 const adminbusiness = require('./Routes/AdminBusiness');
+const location = require('./Routes/location');
+const HomeDisplay = require('./Routes/HomeDisplay');
 
 connectDB();
 const app = express();
@@ -44,6 +46,8 @@ app.use(session({
 app.use('/connectus-api/adminauth', Authadmin);
 app.use('/connectus-api/adminservice', adminservice);
 app.use('/connectus-api/adminbusiness', adminbusiness);
+app.use('/connectus-api/location', location);
+app.use('/connectus-api/homeDisplay', HomeDisplay);
 
 app.get('/', (req, res) => {
   res.send('Server is running.............');

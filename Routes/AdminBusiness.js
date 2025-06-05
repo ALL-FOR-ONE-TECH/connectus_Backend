@@ -25,11 +25,9 @@ const upload = multer({ storage });
 
 // Middleware to check if user is admin
 function ensureadmin(req, res, next) {
-  console.log('Session:', req.session);
   if (req.session?.user?.role !== 'admin') {
     return res.status(403).json({ message: 'Access denied: Only admins can perform this action.' });
   }
-  console.log('✅ Admin authenticated');
   next();
 }
 
@@ -60,26 +58,22 @@ async function verifyTotp(req, res, next) {
   }
 }
 
-// -------------------- location fetch by lon & lat from maplink url --------------------
+// Extract coordinates from Google Maps link
 function extractLatLonFromGoogleMapsPlaceLink(url) {
   let match = url.match(/@([-.\d]+),([-.\d]+)/);
   if (match) {
-    const lat = parseFloat(match[1]);
-    const lon = parseFloat(match[2]);
-    return { lat, lon };
+    return { lat: parseFloat(match[1]), lon: parseFloat(match[2]) };
   }
 
   match = url.match(/[?&](?:ll|q)=([-.\d]+),([-.\d]+)/);
   if (match) {
-    const lat = parseFloat(match[1]);
-    const lon = parseFloat(match[2]);
-    return { lat, lon };
+    return { lat: parseFloat(match[1]), lon: parseFloat(match[2]) };
   }
 
   return null;
-};
+}
 
-// -------------------- Businesses --------------------
+// -------------------- Routes --------------------
 
 // Get all businesses
 router.get('/businesses', ensureadmin, async (req, res) => {
@@ -91,7 +85,7 @@ router.get('/businesses', ensureadmin, async (req, res) => {
   }
 });
 
-// Get single business by ID
+// Get single business
 router.get('/businesses/:id', ensureadmin, async (req, res) => {
   try {
     const business = await Business.findById(req.params.id).populate('serviceTypes');
@@ -104,7 +98,7 @@ router.get('/businesses/:id', ensureadmin, async (req, res) => {
   }
 });
 
-// Create Business with image upload
+// Create Business
 router.post('/businesses', ensureadmin, upload.array('images'), async (req, res) => {
   try {
     const imagePaths = req.files.map(f => `/uploads/${f.filename}`);
@@ -118,10 +112,9 @@ router.post('/businesses', ensureadmin, upload.array('images'), async (req, res)
       }
     }
 
-    // 🧭 Extract lat/lon from Google Maps link if provided
     let lat = null, lon = null;
-    if (req.body.mapUrl) {  // <<<< UPDATED from 'mapLink' to 'mapUrl'
-      const coords = extractLatLonFromGoogleMapsPlaceLink(req.body.mapUrl);  // <<<< UPDATED
+    if (req.body.mapUrl) {
+      const coords = extractLatLonFromGoogleMapsPlaceLink(req.body.mapUrl);
       if (coords) {
         lat = coords.lat;
         lon = coords.lon;
@@ -132,8 +125,11 @@ router.post('/businesses', ensureadmin, upload.array('images'), async (req, res)
       ...req.body,
       image: imagePaths,
       serviceTypes,
-      latitude: lat,    // <<<< ADDED - save latitude
-      longitude: lon,   // <<<< ADDED - save longitude
+      mapUrl: req.body.mapUrl,
+      location: lat && lon ? {
+        type: 'Point',
+        coordinates: [lon, lat],
+      } : undefined,
     });
 
     await ActionLog.create({
@@ -151,7 +147,7 @@ router.post('/businesses', ensureadmin, upload.array('images'), async (req, res)
   }
 });
 
-// Update Business with optional image upload
+// Update Business
 router.put('/businesses/:id', ensureadmin, upload.array('images'), async (req, res) => {
   try {
     const imagePaths = req.files.map(f => `/uploads/${f.filename}`);
@@ -174,12 +170,14 @@ router.put('/businesses/:id', ensureadmin, upload.array('images'), async (req, r
       updateData.image = imagePaths;
     }
 
-    // 🧭 Extract lat/lon from Google Maps link if provided (PUT route)
-    if (req.body.mapUrl) {  // <<<< UPDATED from 'mapLink' to 'mapUrl'
-      const coords = extractLatLonFromGoogleMapsPlaceLink(req.body.mapUrl);  // <<<< UPDATED
+    if (req.body.mapUrl) {
+      const coords = extractLatLonFromGoogleMapsPlaceLink(req.body.mapUrl);
       if (coords) {
-        updateData.latitude = coords.lat;   // <<<< ADDED
-        updateData.longitude = coords.lon;  // <<<< ADDED
+        updateData.mapUrl = req.body.mapUrl;
+        updateData.location = {
+          type: 'Point',
+          coordinates: [coords.lon, coords.lat],
+        };
       }
     }
 
@@ -200,7 +198,7 @@ router.put('/businesses/:id', ensureadmin, upload.array('images'), async (req, r
   }
 });
 
-// Delete Business with TOTP
+// Delete Business
 router.delete('/businesses/:id', ensureadmin, verifyTotp, async (req, res) => {
   try {
     const business = await Business.findById(req.params.id);
@@ -208,7 +206,6 @@ router.delete('/businesses/:id', ensureadmin, verifyTotp, async (req, res) => {
       return res.status(404).json({ message: 'Business not found' });
     }
 
-    // Log before deleting
     await ActionLog.create({
       actionType: 'DELETE',
       collectionName: 'Business',
@@ -218,16 +215,12 @@ router.delete('/businesses/:id', ensureadmin, verifyTotp, async (req, res) => {
       changes: business.toObject(),
     });
 
-    // Delete image files from filesystem
     if (business.image && Array.isArray(business.image)) {
       business.image.forEach((imgPath) => {
-        // Construct absolute path on server
         const filePath = path.join(__dirname, '..', imgPath);
-        // Check if file exists and delete it safely
         if (fs.existsSync(filePath)) {
-          try {                               // <<<< ADDED try-catch
+          try {
             fs.unlinkSync(filePath);
-            console.log(`Deleted file: ${filePath}`);
           } catch (e) {
             console.error(`Failed to delete file ${filePath}:`, e);
           }
@@ -236,21 +229,18 @@ router.delete('/businesses/:id', ensureadmin, verifyTotp, async (req, res) => {
     } else if (typeof business.image === 'string') {
       const filePath = path.join(__dirname, '..', business.image);
       if (fs.existsSync(filePath)) {
-        try {                               // <<<< ADDED try-catch
+        try {
           fs.unlinkSync(filePath);
-          console.log(`Deleted file: ${filePath}`);
         } catch (e) {
           console.error(`Failed to delete file ${filePath}:`, e);
         }
       }
     }
 
-    // Delete business from DB
     await Business.findByIdAndDelete(req.params.id);
 
     res.json({ message: 'Deleted business and images' });
   } catch (err) {
-    console.error(err);
     res.status(500).json({ error: err.message });
   }
 });
