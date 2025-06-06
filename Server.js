@@ -12,6 +12,7 @@ const adminbusiness = require('./Routes/AdminBusiness');
 const location = require('./Routes/location');
 const UserProfile = require('./Routes/UserProfile'); 
 const HomeDisplay = require('./Routes/HomeDisplay');
+const SearchEngine = require('./Routes/SearchEngin'); // Assuming you have a SearchEngine route
 
 connectDB();
 const app = express();
@@ -50,6 +51,7 @@ app.use('/connectus-api/adminbusiness', adminbusiness);
 app.use('/connectus-api/location', location);
 app.use('/connectus-api/homeDisplay', HomeDisplay);
 app.use('/connectus-api/userprofile', UserProfile);
+app.use('/connectus-api/searchengine', SearchEngine); // Add SearchEngine route
 
 app.get('/', (req, res) => {
   res.send('Server is running.............');

@@ -5,9 +5,9 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 const speakeasy = require('speakeasy');
-const axios = require('axios'); // Add axios
+const axios = require('axios');
 
-const user = require('../models/UserRole');
+const User = require('../models/UserRole');
 const Business = require('../models/businessInfo');
 const ActionLog = require('../models/ActionLog');
 
@@ -21,11 +21,10 @@ const storage = multer.diskStorage({
   destination: (req, file, cb) => cb(null, uploadDir),
   filename: (req, file, cb) => cb(null, Date.now() + '-' + file.originalname),
 });
-
 const upload = multer({ storage });
 
 // Middleware to check if user is admin
-function ensureadmin(req, res, next) {
+function ensureAdmin(req, res, next) {
   if (req.session?.user?.role !== 'admin') {
     return res.status(403).json({ message: 'Access denied: Only admins can perform this action.' });
   }
@@ -39,7 +38,7 @@ async function verifyTotp(req, res, next) {
 
   const userId = req.session?.user?.id;
   try {
-    const currentUser = await user.findById(userId);
+    const currentUser = await User.findById(userId);
     if (!currentUser || !currentUser.isTotpEnabled) {
       return res.status(403).json({ message: 'TOTP not enabled for this user' });
     }
@@ -59,75 +58,215 @@ async function verifyTotp(req, res, next) {
   }
 }
 
-// Extract coordinates from Google Maps link
+// Extract lat/lon from Google Maps link
 function extractLatLonFromGoogleMapsPlaceLink(url) {
   let match = url.match(/@([-.\d]+),([-.\d]+)/);
   if (match) {
     return { lat: parseFloat(match[1]), lon: parseFloat(match[2]) };
   }
-
   match = url.match(/[?&](?:ll|q)=([-.\d]+),([-.\d]+)/);
   if (match) {
     return { lat: parseFloat(match[1]), lon: parseFloat(match[2]) };
   }
-
   return null;
-}
-
-// Extract placeName from Google Maps URL (fallback)
-function extractPlaceName(mapUrl) {
-  const match = mapUrl.match(/\/place\/([^\/?]+)/);
-  if (!match) return '';
-  const rawPlace = decodeURIComponent(match[1]);
-  const noState = rawPlace.replace(/,?\s*(Tamil Nadu|India)/gi, '').trim();
-  return noState;
 }
 
 // Reverse Geocoding using LocationIQ
 async function reverseGeocode(lat, lon) {
-  const apiKey = process.env.LOCATION_IQ_API_KEY; // Replace with your LocationIQ API key
-  const url = `https://us1.locationiq.com/v1/reverse.php?key=${apiKey}&lat=${lat}&lon=${lon}&format=json`;
+  const apiKey = process.env.LOCATION_IQ_API_KEY;
+  const url = `https://us1.locationiq.com/v1/reverse.php?key=${apiKey}&lat=${lat}&lon=${lon}&format=json&addressdetails=1`;
 
   try {
     const response = await axios.get(url);
-    if (response.data && response.data.display_name) {
-      return response.data.display_name;
-    } else {
-      return '';
+    if (response.data?.address) {
+      const address = response.data.address;
+      console.log('LocationIQ Address:', address); // Debug log
+      
+      // Build complete street/area name
+      let streetArea = '';
+      if (address.neighbourhood) streetArea = address.neighbourhood;
+      if (address.road) {
+        streetArea = streetArea 
+          ? `${streetArea} ${address.road}`
+          : address.road;
+      }
+      
+      // Priority order for place parts
+      const relevantParts = [];
+      
+      // Add complete street/area name if available
+      if (streetArea) relevantParts.push(streetArea);
+      
+      // Add wider areas
+      if (address.suburb && !streetArea.includes(address.suburb)) relevantParts.push(address.suburb);
+      if (address.city_district) relevantParts.push(address.city_district);
+      if (address.city) relevantParts.push(address.city);
+      
+      // Clean and filter the parts
+      const cleanParts = relevantParts
+        .filter(part => part && part.trim()) // Remove empty/null values
+        .map(part => part.trim()) // Trim whitespace
+        .filter(part => 
+          !/^(Tamil Nadu|India|\d{6}|Division|Zone|CMWSSB)/.test(part) && // Filter out unwanted prefixes
+          !/^[0-9\s-]+$/.test(part) && // Filter out pure numbers
+          part.length > 1 // Filter out single characters
+        );
+
+      // Remove duplicates but keep complete names
+      const uniqueParts = cleanParts.filter((part, index, array) => {
+        // Keep this part if it's not a substring of any other part
+        return !array.some((otherPart, otherIndex) => 
+          index !== otherIndex && 
+          otherPart !== part &&
+          otherPart.toLowerCase().includes(part.toLowerCase())
+        );
+      });
+
+      console.log('Processed Place Parts:', uniqueParts); // Debug log
+
+      return {
+        placeName: response.data.display_name,
+        placeParts: uniqueParts,
+      };
     }
   } catch (err) {
     console.error('Reverse geocoding failed:', err.message);
-    return '';
+  }
+  return {
+    placeName: '',
+    placeParts: [],
+  };
+}
+
+// Process place name into parts
+function processPlaceName(fullPlaceName) {
+  try {
+    // Clean up the place name first
+    const cleaned = fullPlaceName
+      .replace(/\+/g, ' ') // Replace + with spaces
+      .replace(/,?\s*(Tamil Nadu|India|\d{6}|Division|Zone|CMWSSB)([,\s]|$)/gi, '') // Remove unwanted parts
+      .replace(/^[0-9\s-]+$/, ''); // Remove pure numbers
+
+    // First split by commas
+    let parts = cleaned.split(',')
+      .map(part => part.trim())
+      .filter(part => part.length > 0);
+
+    // Then split any remaining parts by space if they're too long (likely multiple places)
+    const finalParts = [];
+    parts.forEach(part => {
+      if (part.length > 30) { // If part is too long, might contain multiple places
+        const subParts = part.split(/\s+(?=[A-Z])/) // Split on space followed by capital letter
+          .filter(p => p.length > 1);
+        finalParts.push(...subParts);
+      } else {
+        finalParts.push(part);
+      }
+    });
+
+    // Clean and filter the parts
+    const cleanedParts = finalParts
+      .map(part => part.trim())
+      .filter(part => 
+        part.length > 1 && 
+        !/^(Tamil Nadu|India|\d{6}|Division|Zone|CMWSSB)/.test(part) &&
+        !/^\d+$/.test(part) // Remove pure numeric strings
+      );
+
+    // Remove duplicates
+    return [...new Set(cleanedParts)];
+  } catch (error) {
+    console.error('Error processing place name:', error);
+    return [];
+  }
+}
+
+// Process full address into clean parts
+function processAddressParts(fullAddress) {
+  try {
+    // Common Indian address suffixes that should not be split
+    const commonSuffixes = ['Nagar', 'Street', 'Road', 'Colony', 'Layout', 'Area', 'Main'];
+    
+    // Split by common delimiters
+    const parts = fullAddress
+      .split(/[,\-\/]/) // Split by comma, hyphen, or forward slash
+      .map(part => part.trim())
+      .filter(Boolean); // Remove empty strings
+
+    let processedParts = [];
+    
+    parts.forEach(part => {
+      // Don't split if it contains common suffixes
+      if (commonSuffixes.some(suffix => part.toLowerCase().includes(suffix.toLowerCase()))) {
+        processedParts.push(part);
+      } else if (part.length > 30) {
+        // Split very long parts by capital letters, but keep suffixes together
+        const subParts = part.split(/\s+(?=[A-Z])/)
+          .map(p => p.trim())
+          .filter(p => p.length > 1);
+        processedParts.push(...subParts);
+      } else {
+        processedParts.push(part);
+      }
+    });
+
+    // Clean and filter parts
+    const cleanParts = processedParts
+      .map(part => part.trim())
+      .filter(part => 
+        part.length > 1 && 
+        !/^(Tamil Nadu|India|\d{6}|Division|Zone|CMWSSB|[0-9\s-]+$)/.test(part)
+      );
+
+    // Smart deduplication: Remove parts that are substrings of other parts
+    const finalParts = cleanParts.filter((part, index, array) => {
+      const isSubstring = array.some((otherPart, otherIndex) => {
+        return index !== otherIndex && 
+               otherPart.toLowerCase().includes(part.toLowerCase()) &&
+               // Don't remove if it's a common suffix
+               !commonSuffixes.some(suffix => 
+                 part.toLowerCase() === suffix.toLowerCase()
+               );
+      });
+      return !isSubstring;
+    });
+
+    return finalParts;
+  } catch (error) {
+    console.error('Error processing address parts:', error);
+    return [];
   }
 }
 
 // -------------------- Routes --------------------
 
-// Get all businesses
-router.get('/businesses', ensureadmin, async (req, res) => {
-  try {
-    const businesses = await Business.find().populate('serviceTypes');
+// GET /businesses?placePart=... (list all or filter by placePart)
+router.get('/businesses', ensureAdmin, async (req, res) => {  try {
+    let query = {};
+    if (req.query.placePart) {
+      query.placeParts = { $in: [req.query.placePart] };  // Check if placePart exists in the array
+    }
+    const businesses = await Business.find(query).populate('serviceTypes');
     res.json(businesses);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// Get single business
-router.get('/businesses/:id', ensureadmin, async (req, res) => {
+// GET /businesses/:id (single business)
+router.get('/businesses/:id', ensureAdmin, async (req, res) => {
   try {
     const business = await Business.findById(req.params.id).populate('serviceTypes');
-    if (!business) {
-      return res.status(404).json({ message: 'Business not found' });
-    }
+    if (!business) return res.status(404).json({ message: 'Business not found' });
     res.json(business);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// Create Business
-router.post('/businesses', ensureadmin, upload.array('images'), async (req, res) => {
+// POST /businesses (create business)
+// POST /businesses (create business)
+router.post('/businesses', ensureAdmin, upload.array('images'), async (req, res) => {
   try {
     const imagePaths = req.files.map(f => `/uploads/${f.filename}`);
 
@@ -142,27 +281,44 @@ router.post('/businesses', ensureadmin, upload.array('images'), async (req, res)
 
     let lat = null, lon = null;
     let placeName = '';
+    let placeParts = [];
 
     if (req.body.mapUrl) {
       const coords = extractLatLonFromGoogleMapsPlaceLink(req.body.mapUrl);
       if (coords) {
         lat = coords.lat;
-        lon = coords.lon;
-        placeName = await reverseGeocode(lat, lon); // LocationIQ
-      } else {
-        placeName = extractPlaceName(req.body.mapUrl); // fallback
+        lon = coords.lon;        // First try reverse geocode
+        const geoData = await reverseGeocode(lat, lon);
+        if (geoData.placeName) {
+          placeName = geoData.placeName;
+          placeParts = geoData.placeParts;
+        } else {
+          // fallback
+          placeName = extractPlaceName(req.body.mapUrl);
+          placeParts = processPlaceName(placeName);
+        }
+
+        console.log('--- CREATE BUSINESS ---');
+        console.log('mapUrl:', req.body.mapUrl);
+        console.log('Extracted lat/lon:', { lat, lon });
+        console.log('Final placeName (used in DB):', placeName);
+        console.log('Final placeParts (used in DB):', placeParts);
       }
     }
 
     const business = await Business.create({
-      ...req.body,
-      image: imagePaths,
-      serviceTypes,
+      businessName: req.body.businessName,
+      address: req.body.address,
+      contactNumber: req.body.contactNumber,
+      contactEmail: req.body.contactEmail,
       mapUrl: req.body.mapUrl,
       placeName,
+      placeParts,
+      serviceTypes,
+      image: imagePaths,
       location: lat && lon ? {
         type: 'Point',
-        coordinates: [lon, lat],
+        coordinates: [Number(lon), Number(lat)],
       } : undefined,
     });
 
@@ -181,8 +337,8 @@ router.post('/businesses', ensureadmin, upload.array('images'), async (req, res)
   }
 });
 
-// Update Business
-router.put('/businesses/:id', ensureadmin, upload.array('images'), async (req, res) => {
+// PUT /businesses/:id (update business)
+router.put('/businesses/:id', ensureAdmin, upload.array('images'), async (req, res) => {
   try {
     const imagePaths = req.files.map(f => `/uploads/${f.filename}`);
 
@@ -196,7 +352,10 @@ router.put('/businesses/:id', ensureadmin, upload.array('images'), async (req, r
     }
 
     const updateData = {
-      ...req.body,
+      businessName: req.body.businessName,
+      address: req.body.address,
+      contactNumber: req.body.contactNumber,
+      contactEmail: req.body.contactEmail,
       serviceTypes,
     };
 
@@ -208,18 +367,58 @@ router.put('/businesses/:id', ensureadmin, upload.array('images'), async (req, r
       const coords = extractLatLonFromGoogleMapsPlaceLink(req.body.mapUrl);
       updateData.mapUrl = req.body.mapUrl;
 
-      if (coords) {
-        updateData.placeName = await reverseGeocode(coords.lat, coords.lon); // LocationIQ
+      let placeName = '';
+      let placeParts = [];      if (coords) {
+        console.log('Coordinates found:', coords);
+        
+        // First try reverse geocode
+        const geoData = await reverseGeocode(coords.lat, coords.lon);
+        console.log('Geocoding response:', geoData);
+          if (geoData.placeName) {
+          placeName = geoData.placeName;
+          // Get parts from both the geocoded data and the processed address
+          const geoParts = geoData.placeParts;
+          const addressParts = processAddressParts(geoData.placeName);
+          placeParts = [...new Set([...geoParts, ...addressParts])];
+          console.log('Using geocoded data:', { placeName, placeParts });
+        } else {
+          // fallback
+          placeName = extractPlaceName(req.body.mapUrl);
+          placeParts = processAddressParts(placeName);
+          console.log('Using fallback data:', { placeName, placeParts });
+        }
+
+        // Make sure placeParts is always an array
+        if (!Array.isArray(placeParts)) {
+          placeParts = [];
+        }
+
+        // Update the data
+        updateData.placeName = placeName;
+        updateData.placeParts = placeParts;
         updateData.location = {
           type: 'Point',
-          coordinates: [coords.lon, coords.lat],
+          coordinates: [Number(coords.lon), Number(coords.lat)],
         };
-      } else {
-        updateData.placeName = extractPlaceName(req.body.mapUrl); // fallback
-      }
-    }
+        
+        console.log('Final updateData:', updateData);
 
-    const updated = await Business.findByIdAndUpdate(req.params.id, updateData, { new: true });
+        console.log('--- UPDATE BUSINESS ---');
+        console.log('mapUrl:', req.body.mapUrl);
+        console.log('Extracted lat/lon:', coords);
+        console.log('Final placeName (used in DB):', placeName);
+        console.log('Final placeParts (used in DB):', placeParts);
+      }
+    }    const updated = await Business.findByIdAndUpdate(
+      req.params.id,
+      updateData,
+      { 
+        new: true, // Return the updated document
+        runValidators: true // Run model validations
+      }
+    ).populate('serviceTypes');
+
+    console.log('Updated document:', updated);
 
     await ActionLog.create({
       actionType: 'UPDATE',
@@ -236,48 +435,12 @@ router.put('/businesses/:id', ensureadmin, upload.array('images'), async (req, r
   }
 });
 
-// Delete Business
-router.delete('/businesses/:id', ensureadmin, verifyTotp, async (req, res) => {
+// GET /businesses/places (unique placeParts list)
+router.get('/businesses/places', async (req, res) => {
   try {
-    const business = await Business.findById(req.params.id);
-    if (!business) {
-      return res.status(404).json({ message: 'Business not found' });
-    }
-
-    await ActionLog.create({
-      actionType: 'DELETE',
-      collectionName: 'Business',
-      documentId: business._id,
-      userId: req.session.user.id,
-      userName: req.session.user.name,
-      changes: business.toObject(),
-    });
-
-    if (business.image && Array.isArray(business.image)) {
-      business.image.forEach((imgPath) => {
-        const filePath = path.join(__dirname, '..', imgPath);
-        if (fs.existsSync(filePath)) {
-          try {
-            fs.unlinkSync(filePath);
-          } catch (e) {
-            console.error(`Failed to delete file ${filePath}:`, e);
-          }
-        }
-      });
-    } else if (typeof business.image === 'string') {
-      const filePath = path.join(__dirname, '..', business.image);
-      if (fs.existsSync(filePath)) {
-        try {
-          fs.unlinkSync(filePath);
-        } catch (e) {
-          console.error(`Failed to delete file ${filePath}:`, e);
-        }
-      }
-    }
-
-    await Business.findByIdAndDelete(req.params.id);
-
-    res.json({ message: 'Deleted business and images' });
+    const allParts = await Business.distinct('placeParts');
+    const uniquePlaces = Array.from(new Set(allParts));
+    res.json(uniquePlaces);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

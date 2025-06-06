@@ -1,4 +1,4 @@
- const mongoose = require('mongoose');
+const mongoose = require('mongoose');
 
 const BusinessSchema = new mongoose.Schema({
   businessName: { type: String, required: true },
@@ -6,7 +6,8 @@ const BusinessSchema = new mongoose.Schema({
   serviceTypes: [{ type: mongoose.Schema.Types.ObjectId, ref: 'ServiceType' }],
   address: { type: String, required: true },
   mapUrl: { type: String, required: true },
-  placeName: { type: String },  // ← Add this line
+  placeName: { type: String },   // ← should be String, not array
+  placeParts: [{ type: String }], // ← Add this line
   contactNumber: { type: String, required: true },
   contactEmail: { type: String, required: true },
   location: {
@@ -23,6 +24,8 @@ const BusinessSchema = new mongoose.Schema({
   createdAt: { type: Date, default: Date.now }
 });
 
+// Add indexes
 BusinessSchema.index({ location: '2dsphere' });
+
 
 module.exports = mongoose.model('Business', BusinessSchema);
