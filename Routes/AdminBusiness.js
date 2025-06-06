@@ -5,6 +5,7 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 const speakeasy = require('speakeasy');
+const axios = require('axios'); // Add axios
 
 const user = require('../models/UserRole');
 const Business = require('../models/businessInfo');
@@ -73,6 +74,33 @@ function extractLatLonFromGoogleMapsPlaceLink(url) {
   return null;
 }
 
+// Extract placeName from Google Maps URL (fallback)
+function extractPlaceName(mapUrl) {
+  const match = mapUrl.match(/\/place\/([^\/?]+)/);
+  if (!match) return '';
+  const rawPlace = decodeURIComponent(match[1]);
+  const noState = rawPlace.replace(/,?\s*(Tamil Nadu|India)/gi, '').trim();
+  return noState;
+}
+
+// Reverse Geocoding using LocationIQ
+async function reverseGeocode(lat, lon) {
+  const apiKey = process.env.LOCATION_IQ_API_KEY; // Replace with your LocationIQ API key
+  const url = `https://us1.locationiq.com/v1/reverse.php?key=${apiKey}&lat=${lat}&lon=${lon}&format=json`;
+
+  try {
+    const response = await axios.get(url);
+    if (response.data && response.data.display_name) {
+      return response.data.display_name;
+    } else {
+      return '';
+    }
+  } catch (err) {
+    console.error('Reverse geocoding failed:', err.message);
+    return '';
+  }
+}
+
 // -------------------- Routes --------------------
 
 // Get all businesses
@@ -113,11 +141,16 @@ router.post('/businesses', ensureadmin, upload.array('images'), async (req, res)
     }
 
     let lat = null, lon = null;
+    let placeName = '';
+
     if (req.body.mapUrl) {
       const coords = extractLatLonFromGoogleMapsPlaceLink(req.body.mapUrl);
       if (coords) {
         lat = coords.lat;
         lon = coords.lon;
+        placeName = await reverseGeocode(lat, lon); // LocationIQ
+      } else {
+        placeName = extractPlaceName(req.body.mapUrl); // fallback
       }
     }
 
@@ -126,6 +159,7 @@ router.post('/businesses', ensureadmin, upload.array('images'), async (req, res)
       image: imagePaths,
       serviceTypes,
       mapUrl: req.body.mapUrl,
+      placeName,
       location: lat && lon ? {
         type: 'Point',
         coordinates: [lon, lat],
@@ -172,12 +206,16 @@ router.put('/businesses/:id', ensureadmin, upload.array('images'), async (req, r
 
     if (req.body.mapUrl) {
       const coords = extractLatLonFromGoogleMapsPlaceLink(req.body.mapUrl);
+      updateData.mapUrl = req.body.mapUrl;
+
       if (coords) {
-        updateData.mapUrl = req.body.mapUrl;
+        updateData.placeName = await reverseGeocode(coords.lat, coords.lon); // LocationIQ
         updateData.location = {
           type: 'Point',
           coordinates: [coords.lon, coords.lat],
         };
+      } else {
+        updateData.placeName = extractPlaceName(req.body.mapUrl); // fallback
       }
     }
 

@@ -1,5 +1,4 @@
-const mongoose = require('mongoose');
-
+ const mongoose = require('mongoose');
 
 const BusinessSchema = new mongoose.Schema({
   businessName: { type: String, required: true },
@@ -7,6 +6,7 @@ const BusinessSchema = new mongoose.Schema({
   serviceTypes: [{ type: mongoose.Schema.Types.ObjectId, ref: 'ServiceType' }],
   address: { type: String, required: true },
   mapUrl: { type: String, required: true },
+  placeName: { type: String },  // ← Add this line
   contactNumber: { type: String, required: true },
   contactEmail: { type: String, required: true },
   location: {
