@@ -17,19 +17,10 @@ router.get('/service-types', async (req, res) => {
 // Route 2 → Get all unique places from placeParts
 router.get('/businesses/places', async (req, res) => {
   try {
-    const rawPlaces = await Business.distinct('placeName', { placeName: { $ne: '' } });
-
-    // Split each place by comma → make array
-    let allPlaces = [];
-    rawPlaces.forEach(place => {
-      const parts = place.split(',').map(part => part.trim());
-      allPlaces.push(...parts);
-    });
-
-    // Remove duplicates
-    const uniquePlaces = [...new Set(allPlaces)].filter(p => p.length > 0);
-
-    res.json(placesList);
+    const rawPlaces = await Business.distinct('placeParts');
+    // Filter out empty values and flatten the array since placeParts is an array field
+    const uniquePlaces = [...new Set(rawPlaces.flat().filter(Boolean))];
+    res.json(uniquePlaces);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -93,7 +84,6 @@ router.get('/businesses/search', async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
-
 
 // Get Business by ID → Full Details
 router.get('/businesses/:businessId', async (req, res) => {
