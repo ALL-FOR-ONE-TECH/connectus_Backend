@@ -107,7 +107,7 @@ async function reverseGeocode(lat, lon) {
         .filter(part => part && part.trim()) // Remove empty/null values
         .map(part => part.trim()) // Trim whitespace
         .filter(part => 
-          !/^(Tamil Nadu|India|\d{6}|Division|Zone|CMWSSB)/.test(part) && // Filter out unwanted prefixes
+          !/^(Chennai|Thiruvallur|Tamil Nadu|India|\d{6}|Division|Zone|CMWSSB)/.test(part) && // Filter out unwanted prefixes
           !/^[0-9\s-]+$/.test(part) && // Filter out pure numbers
           part.length > 1 // Filter out single characters
         );
@@ -144,7 +144,7 @@ function processPlaceName(fullPlaceName) {
     // Clean up the place name first
     const cleaned = fullPlaceName
       .replace(/\+/g, ' ') // Replace + with spaces
-      .replace(/,?\s*(Tamil Nadu|India|\d{6}|Division|Zone|CMWSSB)([,\s]|$)/gi, '') // Remove unwanted parts
+      .replace(/,?\s*(Chennai|Thiruvallur|Tamil Nadu|India|\d{6}|Division|Zone|CMWSSB)([,\s]|$)/gi, '') // Remove unwanted parts
       .replace(/^[0-9\s-]+$/, ''); // Remove pure numbers
 
     // First split by commas
@@ -169,7 +169,7 @@ function processPlaceName(fullPlaceName) {
       .map(part => part.trim())
       .filter(part => 
         part.length > 1 && 
-        !/^(Tamil Nadu|India|\d{6}|Division|Zone|CMWSSB)/.test(part) &&
+        !/^(Chennai|Thiruvallur|Tamil Nadu|India|\d{6}|Division|Zone|CMWSSB)/.test(part) &&
         !/^\d+$/.test(part) // Remove pure numeric strings
       );
 
@@ -215,7 +215,7 @@ function processAddressParts(fullAddress) {
       .map(part => part.trim())
       .filter(part => 
         part.length > 1 && 
-        !/^(Tamil Nadu|India|\d{6}|Division|Zone|CMWSSB|[0-9\s-]+$)/.test(part)
+        !/^(Chennai|Thiruvallur|Tamil Nadu|India|\d{6}|Division|Zone|CMWSSB|[0-9\s-]+$)/.test(part)
       );
 
     // Smart deduplication: Remove parts that are substrings of other parts
