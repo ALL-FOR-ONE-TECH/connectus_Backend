@@ -3,6 +3,14 @@ const Complaint = require('../models/complaint');
 
 const router = express.Router();
 
+// Middleware to check if user is admin
+function ensureAdmin(req, res, next) {
+  if (req.session?.user?.role !== 'admin') {
+    return res.status(403).json({ message: 'Access denied: Only admins can perform this action.' });
+  }
+  next();
+}
+
 // POST → create complaint
 router.post('/complaints', async (req, res) => {
   try {
@@ -35,7 +43,7 @@ router.post('/complaints', async (req, res) => {
 
 
 // GET → list all complaints (optional for admin view)
-router.get('/complaints', async (req, res) => {
+router.get('/Get-allcomplaints', ensureAdmin,async (req, res) => {
   try {
     const complaints = await Complaint.find().sort({ createdAt: -1 });
     res.json(complaints);
