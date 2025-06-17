@@ -199,4 +199,29 @@ router.post('/review-link/generate-for-all', async (req, res) => {
   }
 });
 
+// API → Get all submitted reviews with business details
+router.get('/all-submitted-reviews', ensureAdmin, async (req, res) => {
+  try {
+    const reviews = await Review.find()
+      .populate('business', 'businessName') // populate business name and ID
+      .sort({ createdAt: -1 }); // optional: sort by latest
+
+    const formattedReviews = reviews.map((review) => ({
+      reviewId: review._id,
+      reviewerName: review.reviewerName,
+      reviewerEmail: review.reviewerEmail,
+      rating: review.rating,
+      reviewText: review.reviewText,
+      createdAt: review.createdAt,
+      businessId: review.business?._id || null,
+      businessName: review.business?.businessName || 'Business Not Found'
+    }));
+
+    res.json(formattedReviews);
+  } catch (err) {
+    console.error('❌ Error fetching submitted reviews:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 module.exports = router;
