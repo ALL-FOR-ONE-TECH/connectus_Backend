@@ -46,7 +46,7 @@ async function createReviewLink(businessId) {
     }
 
     // Create review link
-    const baseUrl = process.env.FRONTEND_URL || process.env.SERVER_HOST || 'http://localhost:3000';
+    const baseUrl = process.env.FRONTEND_URL || process.env.SERVER_HOST || 'https://connectus.net.in';
     const fullLink = `${baseUrl}/review-link/${code}`;
 
     const reviewLink = new ReviewLink({
