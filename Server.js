@@ -46,10 +46,10 @@ app.use(session({
     collectionName: 'sessions'
   }),
   cookie: {
-    maxAge: 1000 * 60 * 60 * 24,
-    sameSite: 'none',
-    secure: true,           // must be true for cookies over HTTPS
-    httpOnly: true,
+  maxAge: 86400000,
+  sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+  secure: process.env.NODE_ENV === 'production',
+  httpOnly: true
   }
 }));
 
