@@ -22,6 +22,10 @@ const app = express();
 
 app.use(express.json());
 
+// Enable trust proxy (needed for secure cookies behind HTTPS / reverse proxy like NGINX)
+app.set('trust proxy', 1);
+
+// CORS middleware – must come before routes
 app.use(cors({
   origin: 'https://connectus.net.in',
   methods: ['GET', 'POST', 'PUT', 'DELETE'],
