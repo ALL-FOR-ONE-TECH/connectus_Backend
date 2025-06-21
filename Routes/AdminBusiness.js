@@ -446,4 +446,60 @@ router.get('/businesses/places', async (req, res) => {
   }
 });
 
+// Delete Business with TOTP
+router.delete('/businesses/:id', ensureadmin, verifyTotp, async (req, res) => {
+  try {
+    const business = await Business.findById(req.params.id);
+    if (!business) {
+      return res.status(404).json({ message: 'Business not found' });
+    }
+
+    // Log before deleting
+    await ActionLog.create({
+      actionType: 'DELETE',
+      collectionName: 'Business',
+      documentId: business._id,
+      userId: req.session.user.id,
+      userName: req.session.user.name,
+      changes: business.toObject(),
+    });
+
+    // Delete image files from filesystem
+    if (business.image && Array.isArray(business.image)) {
+      business.image.forEach((imgPath) => {
+        // Construct absolute path on server
+        const filePath = path.join(__dirname, '..', imgPath);
+        // Check if file exists and delete it safely
+        if (fs.existsSync(filePath)) {
+          try {                               // <<<< ADDED try-catch
+            fs.unlinkSync(filePath);
+            console.log(`Deleted file: ${filePath}`);
+          } catch (e) {
+            console.error(`Failed to delete file ${filePath}:`, e);
+          }
+        }
+      });
+    } else if (typeof business.image === 'string') {
+      const filePath = path.join(__dirname, '..', business.image);
+      if (fs.existsSync(filePath)) {
+        try {                               // <<<< ADDED try-catch
+          fs.unlinkSync(filePath);
+          console.log(`Deleted file: ${filePath}`);
+        } catch (e) {
+          console.error(`Failed to delete file ${filePath}:`, e);
+        }
+      }
+    }
+
+    // Delete business from DB
+    await Business.findByIdAndDelete(req.params.id);
+
+    res.json({ message: 'Deleted business and images' });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+
 module.exports = router;
