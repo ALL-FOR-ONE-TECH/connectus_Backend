@@ -63,8 +63,8 @@ app.use('/connectus-api/homeDisplay', HomeDisplay);
 app.use('/connectus-api/userprofile', UserProfile);
 app.use('/connectus-api/searchengine', SearchEngine); // Add SearchEngine route
 app.use('/connectus-api/businessDetails', businessesDetail); // Add businessDetails route
-app.use('/connectus-api/complaints', ComplaintsRouter); // Add complaints route
 app.use('/connectus-api/reviews', ReviewRout); // Add Review route
+app.use('/connectus-api/complaints', ComplaintsRouter); // Add complaints route
 
 app.get('/', (req, res) => {
   res.send('Server is running.............');
