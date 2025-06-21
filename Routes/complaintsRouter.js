@@ -43,7 +43,7 @@ router.post('/complaints', async (req, res) => {
 
 
 // GET → list all complaints (optional for admin view)
-router.get('/complaintslist', ensureAdmin,async (req, res) => {
+router.get('/list', ensureAdmin,async (req, res) => {
   try {
     const complaints = await Complaint.find().sort({ createdAt: -1 });
     res.json(complaints);
