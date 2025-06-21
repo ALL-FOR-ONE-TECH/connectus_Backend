@@ -36,20 +36,23 @@ app.use(cors({
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 app.use(session({
+  name: 'connectus.sid',
   secret: process.env.SESSION_SECRET,
   resave: false,
   saveUninitialized: false,
   store: MongoStore.create({
     mongoUrl: process.env.MONGO_URI,
-    dbName: process.env.MONGO_DB_NAME, // ensure it targets your intended DB
+    dbName: process.env.MONGO_DB_NAME,
     collectionName: 'sessions'
   }),
   cookie: {
-    maxAge: 1000 * 60 * 60 * 24, // 1 day
-    sameSite: 'lax',
-    secure: false
+    maxAge: 1000 * 60 * 60 * 24,
+    sameSite: 'none',
+    secure: true,           // must be true for cookies over HTTPS
+    httpOnly: true,
   }
 }));
+
 
 // Import routes
 app.use('/connectus-api/adminauth', Authadmin);
