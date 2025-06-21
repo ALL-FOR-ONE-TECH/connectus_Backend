@@ -200,7 +200,7 @@ router.post('/review-link/generate-for-all', async (req, res) => {
 });
 
 // API → Get all submitted reviews with business details
-router.get('/all-submitted-reviews', ensureAdmin, async (req, res) => {
+router.get('/Review-businesses', ensureAdmin, async (req, res) => {
   try {
     const reviews = await Review.find()
       .populate('business', 'businessName') // populate business name and ID
