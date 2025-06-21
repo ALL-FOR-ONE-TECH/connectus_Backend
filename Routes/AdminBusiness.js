@@ -447,7 +447,7 @@ router.get('/businesses/places', async (req, res) => {
 });
 
 // Delete Business with TOTP
-router.delete('/businesses/:id', ensureAdmin, verifyTotp, async (req, res) => {
+router.delete('/businesses/:businessId', ensureAdmin, verifyTotp, async (req, res) => {
   try {
     const business = await Business.findById(req.params.id);
     if (!business) {
